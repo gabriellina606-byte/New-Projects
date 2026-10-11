@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Exemplo de integração ERP</title>
+  <style>
+    :root { --borda: #d5dae3; --fundo: #f3f5f8; --texto: #1d2433; --suave: #5b6578; --primaria: #1f5fbf; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      grid-template-rows: 52px 1fr;
+      background: var(--fundo);
+      color: var(--texto);
+      font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    }
+    header {
+      grid-column: 1 / -1;
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 18px;
+      background: #172033; color: #fff; font-weight: 600;
+    }
+    header small { font-weight: 400; opacity: 0.7; }
+    aside { padding: 16px; border-right: 1px solid var(--borda); background: #fff; overflow: auto; }
+    aside h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--suave); }
+    .doc {
+      display: block; width: 100%; margin-bottom: 6px; padding: 10px 12px;
+      border: 1px solid var(--borda); border-radius: 8px; background: #fff;
+      text-align: left; font: inherit; cursor: pointer;
+    }
+    .doc:hover { border-color: var(--primaria); }
+    .doc small { display: block; color: var(--suave); }
+    .controles { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0; }
+    .controles button {
+      padding: 6px 10px; border: 1px solid var(--borda); border-radius: 6px;
+      background: #fff; font: inherit; cursor: pointer;
+    }
+    pre {
+      max-height: 220px; overflow: auto; margin: 0; padding: 10px;
+      border-radius: 6px; background: #0f1522; color: #b8f5c8; font-size: 12px;
+    }
+    main { min-width: 0; min-height: 0; }
+    iframe { display: block; width: 100%; height: 100%; border: 0; }
+    @media (max-width: 760px) {
+      body { grid-template-columns: 1fr; grid-template-rows: 52px auto 1fr; }
+      aside { border-right: 0; border-bottom: 1px solid var(--borda); max-height: 40vh; }
+    }
+  </style>
+</head>
+<body>
+  <header>ERP do Escritório <small>— exemplo de integração do leitor de PDF</small></header>
+
+  <aside>
+    <h2>Documentos do processo</h2>
+    <button class="doc" data-url="exemplos/documento-exemplo.pdf" data-nome="Contrato de prestação de serviços.pdf">
+      Contrato de prestação de serviços<small>8 páginas · via URL</small>
+    </button>
+    <button class="doc" data-url="exemplos/documento-exemplo.pdf" data-nome="Contrato (busca).pdf" data-busca="rescisão">
+      Contrato — abrir já buscando “rescisão”<small>via URL + busca</small>
+    </button>
+    <button class="doc" id="enviarBytes">
+      Enviar bytes do PDF<small>via postMessage (ArrayBuffer)</small>
+    </button>
+
+    <div class="controles">
+      <button data-cmd='{"tipo":"irParaPagina","pagina":5}'>Ir p/ pág. 5</button>
+      <button data-cmd='{"tipo":"zoom","valor":"page-width"}'>Largura</button>
+      <button data-cmd='{"tipo":"zoom","valor":1.5}'>150%</button>
+      <button data-cmd='{"tipo":"girar","graus":90}'>Girar</button>
+      <button data-cmd='{"tipo":"configurar","opcoes":{"marcaDagua":"CONFIDENCIAL — uso interno"}}'>Marca d'água</button>
+      <button data-cmd='{"tipo":"configurar","opcoes":{"permitirDownload":false}}'>Bloquear download</button>
+      <button data-cmd='{"tipo":"imprimir"}'>Imprimir</button>
+      <button data-cmd='{"tipo":"fechar"}'>Fechar</button>
+    </div>
+
+    <h2>Eventos recebidos do leitor</h2>
+    <pre id="log"></pre>
+  </aside>
+
+  <main>
+    <!-- allow="fullscreen" habilita o botão de tela cheia dentro do iframe -->
+    <iframe id="leitor" src="index.html?sidebar=1" title="Leitor de PDF" allow="fullscreen"></iframe>
+  </main>
+
+  <script>
+    const leitor = document.getElementById("leitor");
+    // Em produção, use a origem exata do leitor (ex.: "https://leitor.meuescritorio.com.br").
+    const ORIGEM_LEITOR = new URL(leitor.src, location.href).origin;
+    const log = document.getElementById("log");
+
+    function enviar(mensagem, transferir) {
+      leitor.contentWindow.postMessage(mensagem, ORIGEM_LEITOR, transferir);
+    }
+
+    document.querySelectorAll(".doc[data-url]").forEach((botao) => {
+      botao.addEventListener("click", () =>
+        enviar({ tipo: "abrir", url: botao.dataset.url, nome: botao.dataset.nome, busca: botao.dataset.busca }),
+      );
+    });
+
+    document.getElementById("enviarBytes").addEventListener("click", async () => {
+      // Útil quando o ERP baixa o arquivo com autenticação própria (token, etc.).
+      const resposta = await fetch("exemplos/documento-exemplo.pdf");
+      const dados = await resposta.arrayBuffer();
+      enviar({ tipo: "abrir", dados, nome: "Documento enviado pelo ERP.pdf", pagina: 3 }, [dados]);
+    });
+
+    document.querySelectorAll("[data-cmd]").forEach((botao) => {
+      botao.addEventListener("click", () => enviar(JSON.parse(botao.dataset.cmd)));
+    });
+
+    window.addEventListener("message", (evento) => {
+      if (evento.origin !== ORIGEM_LEITOR || evento.data?.origem !== "leitor-pdf") return;
+      const { origem, ...dados } = evento.data;
+      log.textContent = JSON.stringify(dados) + "\n" + log.textContent;
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leitor de PDF</title>
+  <link rel="stylesheet" href="css/leitor.css">
+  <script type="module" src="js/leitor.js"></script>
+</head>
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+    <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-print" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5"/><path d="M4 19h16"/></symbol>
+    <symbol id="i-full" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17.5v.01"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  </svg>
+
+  <div id="app" class="app sem-documento">
+    <header class="toolbar" role="toolbar" aria-label="Ferramentas do leitor">
+      <div class="grupo">
+        <button class="btn" id="btnSidebar" title="Painel lateral (F4)" aria-label="Mostrar ou ocultar painel lateral" aria-pressed="false"><svg><use href="#i-sidebar"/></svg></button>
+        <button class="btn" id="btnAbrir" title="Abrir arquivo (Ctrl+O)" aria-label="Abrir arquivo PDF"><svg><use href="#i-open"/></svg></button>
+        <input type="file" id="inputArquivo" accept="application/pdf,.pdf" hidden>
+        <span class="nome-arquivo" id="nomeArquivo" title=""></span>
+      </div>
+
+      <div class="grupo grupo-centro">
+        <button class="btn" id="btnAnterior" title="Página anterior" aria-label="Página anterior"><svg><use href="#i-up"/></svg></button>
+        <button class="btn" id="btnProxima" title="Próxima página" aria-label="Próxima página"><svg><use href="#i-down"/></svg></button>
+        <label class="paginacao">
+          <span class="sr-only">Página atual</span>
+          <input type="text" inputmode="numeric" id="inputPagina" value="0" aria-label="Página atual" autocomplete="off">
+          <span id="totalPaginas">/ 0</span>
+        </label>
+        <span class="separador"></span>
+        <button class="btn" id="btnZoomMenos" title="Diminuir zoom (Ctrl −)" aria-label="Diminuir zoom"><svg><use href="#i-minus"/></svg></button>
+        <select id="selectZoom" aria-label="Nível de zoom" title="Zoom">
+          <option value="auto">Automático</option>
+          <option value="page-fit">Página inteira</option>
+          <option value="page-width">Largura da página</option>
+          <option value="0.5">50%</option>
+          <option value="0.75">75%</option>
+          <option value="1">100%</option>
+          <option value="1.25">125%</option>
+          <option value="1.5">150%</option>
+          <option value="2">200%</option>
+          <option value="3">300%</option>
+          <option value="4">400%</option>
+          <option value="custom" id="opcaoZoomCustom" hidden disabled></option>
+        </select>
+        <button class="btn" id="btnZoomMais" title="Aumentar zoom (Ctrl +)" aria-label="Aumentar zoom"><svg><use href="#i-plus"/></svg></button>
+        <button class="btn" id="btnGirar" title="Girar no sentido horário (R)" aria-label="Girar páginas"><svg><use href="#i-rotate"/></svg></button>
+      </div>
+
+      <div class="grupo grupo-direita">
+        <button class="btn" id="btnBusca" title="Buscar no documento (Ctrl+F)" aria-label="Buscar no documento" aria-pressed="false"><svg><use href="#i-search"/></svg></button>
+        <button class="btn" id="btnImprimir" title="Imprimir (Ctrl+P)" aria-label="Imprimir"><svg><use href="#i-print"/></svg></button>
+        <button class="btn" id="btnBaixar" title="Baixar (Ctrl+S)" aria-label="Baixar o PDF"><svg><use href="#i-download"/></svg></button>
+        <button class="btn" id="btnTelaCheia" title="Tela cheia (F11)" aria-label="Tela cheia"><svg><use href="#i-full"/></svg></button>
+        <button class="btn" id="btnTema" title="Alternar tema claro/escuro" aria-label="Alternar tema"><svg><use href="#i-theme"/></svg></button>
+        <button class="btn" id="btnAjuda" title="Atalhos de teclado (?)" aria-label="Atalhos de teclado"><svg><use href="#i-help"/></svg></button>
+      </div>
+    </header>
+
+    <div class="barra-busca" id="barraBusca" hidden>
+      <svg class="icone-busca"><use href="#i-search"/></svg>
+      <input type="search" id="inputBusca" placeholder="Buscar no documento…" aria-label="Texto a buscar" autocomplete="off">
+      <span class="status-busca" id="statusBusca" aria-live="polite"></span>
+      <button class="btn" id="btnBuscaAnterior" title="Resultado anterior (Shift+Enter)" aria-label="Resultado anterior"><svg><use href="#i-up"/></svg></button>
+      <button class="btn" id="btnBuscaProxima" title="Próximo resultado (Enter)" aria-label="Próximo resultado"><svg><use href="#i-down"/></svg></button>
+      <button class="btn" id="btnFecharBusca" title="Fechar busca (Esc)" aria-label="Fechar busca"><svg><use href="#i-close"/></svg></button>
+    </div>
+
+    <div class="corpo">
+      <aside class="sidebar" id="sidebar" aria-label="Painel lateral">
+        <div class="abas" role="tablist">
+          <button role="tab" class="aba ativa" id="abaMiniaturas" aria-selected="true" aria-controls="painelMiniaturas">Páginas</button>
+          <button role="tab" class="aba" id="abaSumario" aria-selected="false" aria-controls="painelSumario">Sumário</button>
+        </div>
+        <div class="painel" id="painelMiniaturas" role="tabpanel"></div>
+        <div class="painel" id="painelSumario" role="tabpanel" hidden></div>
+      </aside>
+
+      <main class="area-visualizacao" id="areaVisualizacao" tabindex="0" aria-label="Documento">
+        <div class="paginas" id="paginas"></div>
+
+        <div class="estado-vazio" id="estadoVazio">
+          <svg><use href="#i-file"/></svg>
+          <h1>Nenhum documento aberto</h1>
+          <p>Arraste um arquivo PDF para cá ou</p>
+          <button class="btn-primario" id="btnAbrirVazio">Escolher arquivo</button>
+        </div>
+
+        <div class="estado-carregando" id="estadoCarregando" hidden>
+          <div class="spinner" aria-hidden="true"></div>
+          <p id="textoCarregando">Carregando documento…</p>
+          <div class="barra-progresso"><div id="progressoCarregando"></div></div>
+        </div>
+
+        <div class="estado-erro" id="estadoErro" hidden role="alert">
+          <h1>Não foi possível abrir o documento</h1>
+          <p id="textoErro"></p>
+        </div>
+      </main>
+    </div>
+
+    <div class="soltar-arquivo" id="soltarArquivo" hidden>
+      <div>Solte o PDF para abrir</div>
+    </div>
+  </div>
+
+  <dialog id="dialogoSenha" class="dialogo">
+    <form method="dialog" id="formSenha">
+      <h2>Documento protegido</h2>
+      <p id="textoSenha">Este PDF exige uma senha para ser aberto.</p>
+      <input type="password" id="inputSenha" autocomplete="off" aria-label="Senha do PDF" required>
+      <div class="acoes">
+        <button type="button" class="btn-secundario" id="btnCancelarSenha">Cancelar</button>
+        <button type="submit" class="btn-primario">Abrir</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dialogoAjuda" class="dialogo">
+    <h2>Atalhos de teclado</h2>
+    <table class="atalhos">
+      <tr><td><kbd>→</kbd> <kbd>PgDn</kbd> <kbd>N</kbd></td><td>Próxima página</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>PgUp</kbd> <kbd>P</kbd></td><td>Página anterior</td></tr>
+      <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>Primeira / última página</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>+</kbd> / <kbd>−</kbd> / <kbd>0</kbd></td><td>Aumentar / diminuir / zoom automático</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + roda do mouse</td><td>Zoom</td></tr>
+      <tr><td><kbd>R</kbd> / <kbd>Shift</kbd>+<kbd>R</kbd></td><td>Girar horário / anti-horário</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>F</kbd></td><td>Buscar no documento</td></tr>
+      <tr><td><kbd>Enter</kbd> / <kbd>Shift</kbd>+<kbd>Enter</kbd></td><td>Próximo / anterior resultado</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>G</kbd></td><td>Ir para página</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>O</kbd></td><td>Abrir arquivo</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>P</kbd> / <kbd>S</kbd></td><td>Imprimir / baixar</td></tr>
+      <tr><td><kbd>F4</kbd></td><td>Painel lateral</td></tr>
+    </table>
+    <form method="dialog" class="acoes"><button class="btn-primario">Fechar</button></form>
+  </dialog>
+
+  <div class="aviso" id="aviso" role="status" aria-live="polite" hidden></div>
+  <div id="areaImpressao" aria-hidden="true"></div>
+</body>
+</html>
