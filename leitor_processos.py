@@ -15,6 +15,8 @@ Regras (baseadas nos PDFs de exemplo do TRT-1):
     diferentes), os nomes ficam juntos na mesma célula, um por linha.
   * Mesmo reclamante com processos diferentes = linhas diferentes (só é avisado).
 
+Também é usado pela versão web (servidor.py), que roda dentro do ERP.
+
 Uso:
     python leitor_processos.py pasta_com_pdfs                 # nome do Excel sai pelas datas
     python leitor_processos.py pasta_com_pdfs -o semana.xlsx --salvar-texto
@@ -28,7 +30,7 @@ import re
 import sys
 import unicodedata
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, time
 from pathlib import Path
 
 # --------------------------------------------------------------------------
@@ -52,9 +54,11 @@ APELIDOS = [
 # --------------------------------------------------------------------------
 # Padrões
 # --------------------------------------------------------------------------
-# Nº CNJ. Tolera espaço que o OCR às vezes coloca no meio ("0101 308-58...").
+# Nº CNJ. Tolera espaço que o OCR às vezes coloca no meio ("0101 308-58...") e
+# ':' ou ',' lidos no lugar do ponto ("...2026.5:01.0012").
+_SEP = r"\s?[.:,]\s?"
 CNJ_RE = re.compile(
-    r"(?<!\d)(\d{3,4}\s?\d{3,4})\s?-\s?(\d{2})\.(\d{4})\.(\d)\.(\d{2})\.(\d{4})(?!\d)"
+    rf"(?<!\d)(\d{{3,4}}\s?\d{{3,4}})\s?-\s?(\d{{2}}){_SEP}(\d{{4}}){_SEP}(\d){_SEP}(\d{{2}}){_SEP}(\d{{4}})(?!\d)"
 )
 DATA_HORA_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})\s*(?:AS\s*)?(\d{1,2})\s*[:H]\s*(\d{2})")
 DATA_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
@@ -105,7 +109,12 @@ def limpar_ruido(txt: str) -> str:
     toks = txt.split()
     while toks and not TOKEN_OK.match(toks[0]):
         toks.pop(0)
-    while toks and (not TOKEN_OK.match(toks[-1]) or (len(toks[-1]) == 1 and not toks[-1].isalpha())):
+    while toks and (
+        not TOKEN_OK.match(toks[-1])
+        or (len(toks[-1]) == 1 and not toks[-1].isalpha())
+        # letra solta depois de "LTDA"/"S.A." ("... S.A. É" do OCR)
+        or (len(toks) > 1 and len(toks[-1]) == 1 and SUFIXO_RE.search(toks[-2]))
+    ):
         toks.pop()
     return " ".join(toks).strip(" ,;:-")
 
@@ -165,7 +174,8 @@ def ocr_imagem(img):
         return ocr_imagem(img)
 
 
-def extrair_paginas(pdf_path: Path, dpi=300, forcar_ocr=False) -> list:
+def extrair_paginas(pdf, dpi=300, forcar_ocr=False, progresso=None) -> list:
+    """pdf: caminho ou bytes. progresso(pagina, total) é chamado a cada página."""
     try:
         import pymupdf as fitz  # PyMuPDF (nome novo)
     except ImportError:
@@ -173,8 +183,11 @@ def extrair_paginas(pdf_path: Path, dpi=300, forcar_ocr=False) -> list:
     from PIL import Image
 
     paginas = []
-    with fitz.open(pdf_path) as doc:
-        for page in doc:
+    doc = fitz.open(stream=pdf, filetype="pdf") if isinstance(pdf, (bytes, bytearray)) else fitz.open(pdf)
+    with doc:
+        for k, page in enumerate(doc, 1):
+            if progresso:
+                progresso(k, doc.page_count)
             txt = "" if forcar_ocr else page.get_text()
             if len(txt.strip()) < 50:  # página só com imagem -> OCR
                 pix = page.get_pixmap(dpi=dpi, colorspace=fitz.csGRAY)
@@ -350,7 +363,7 @@ def achar_audiencia(linhas: list):
 def achar_vara(flat: str, processo: str = "") -> str:
     """VARA. No TRT-1 (.5.01.) os 4 últimos dígitos do nº CNJ são a vara; mais confiável
     que o OCR do cabeçalho (que às vezes lê 'ª' como dígito). Texto é só plano B."""
-    if processo and cnj_valido(processo) and processo.split(".")[-2] == "01":
+    if processo and cnj_valido(processo) and processo.split(".")[2:4] == ["5", "01"]:
         return f"{int(processo[-4:])}ª VT"
     m = VARA_RE.search(flat)
     return f"{int(m.group(1))}ª VT" if m else ""
@@ -427,12 +440,15 @@ def achar_zoom(texto: str):
     raw = re.sub(r"([-/?=])\s*\n\s*", r"\1", sem_acentos(texto))  # URL quebrada em 2 linhas
     m = ZOOM_RE.search(raw)
     link = m.group(0) if m else ""
+    # O OCR costuma trocar o "1" de "trt1" por "l" ou "I" no subdomínio.
+    link = re.sub(r"(?i)^(https?://)trt[1lI|]{1,2}-", r"\1trt1-", link)
     partes = []
     mi = ID_REUNIAO_RE.search(raw)
     if mi:
         d = re.sub(r"\D", "", mi.group(1))
-        if len(d) in (9, 10, 11):
-            partes.append("ID da reunião: " + f"{d[:3]} {d[3:6]} {d[6:]}")
+        if len(d) in (9, 10, 11):  # formato do Zoom: 3-3-3, 3-3-4 ou 3-4-4
+            meio = 4 if len(d) == 11 else 3
+            partes.append(f"ID da reunião: {d[:3]} {d[3:3 + meio]} {d[3 + meio:]}")
     ms = SENHA_RE.search(raw)
     if ms:
         partes.append(f"senha: {ms.group(1)}")
@@ -509,7 +525,8 @@ def agrupar(notificacoes: list) -> list:
         g = grupos.setdefault(chave, {
             "processo": n["processo"], "reclamante": "", "data": None, "hora": "",
             "polos": [], "reclamado": "", "outros": None, "vara": "", "tipo": "",
-            "formato": "", "testemunhas": "", "link_local": "", "origem": [], "alertas": [],
+            "formato": "", "testemunhas": "", "link_local": "", "origem": [], "fontes": [],
+            "alertas": [],
         })
         if g["reclamante"] and n["reclamante"] and normalizar(g["reclamante"]) != normalizar(n["reclamante"]):
             g["alertas"].append("Reclamantes diferentes no mesmo processo (OCR?)")
@@ -528,6 +545,7 @@ def agrupar(notificacoes: list) -> list:
         for campo in ("vara", "tipo", "formato", "testemunhas", "link_local"):
             g[campo] = g[campo] or n[campo]
         g["origem"].append(f"{n['arquivo']} p.{n['paginas'][0]}")
+        g["fontes"].append({"arquivo": n["arquivo"], "pagina": n["paginas"][0]})
         g["alertas"] += n["alertas"]
 
     lista = list(grupos.values())
@@ -580,15 +598,64 @@ LARGURAS = [12.1, 10.7, 8.1, 32.4, 48.3, 26.9, 20.3, 15.9, 16.1, 14.0, 27.7, 80.
 FORMATO_HORA = r"[$-F400]h:mm:ss\ AM/PM"
 
 
-def nome_arquivo_padrao(grupos: list) -> str:
-    datas = [g["data"] for g in grupos if g["data"]]
+def montar_linhas(grupos: list) -> list:
+    """Grupos -> linhas da planilha (dicionários só com texto, fáceis de editar e
+    de mandar como JSON para a página web). DATA = "AAAA-MM-DD", HORA = "HH:MM"."""
+    linhas = []
+    for g in grupos:
+        linhas.append({
+            "status": STATUS_PADRAO,
+            "data": g["data"].strftime("%Y-%m-%d") if g["data"] else "",
+            "hora": g["hora"],
+            "hospital": "\n".join(dict.fromkeys(nome_hospital(p) for p in g["polos"])),
+            "reclamante": nome_proprio(g["reclamante"]) if g["reclamante"] else "",
+            "processo": g["processo"],
+            "vara": g["vara"],
+            "modalidade": g["tipo"],
+            "audiencias": g["formato"],
+            "testemunhas": g["testemunhas"],
+            "observacao": "",
+            "link": g["link_local"],
+            # apoio (aba "Conferir")
+            "reclamante_original": g["reclamante"],
+            "destinatarios": g["polos"],
+            "outros": g["outros"],
+            "alertas": g["alertas"],
+            "origem": g["origem"],
+            "fontes": g.get("fontes", []),
+        })
+    return linhas
+
+
+def _data(valor):
+    if not valor:
+        return None
+    try:
+        return datetime.strptime(str(valor)[:10], "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _hora(valor):
+    m = re.match(r"^(\d{1,2}):(\d{2})", str(valor or ""))
+    if not m:
+        return None
+    try:
+        return time(int(m.group(1)), int(m.group(2)))
+    except ValueError:
+        return None
+
+
+def nome_arquivo_padrao(linhas: list) -> str:
+    datas = [d for d in (_data(l.get("data")) for l in linhas) if d]
     if not datas:
         return "Audiências.xlsx"
     ini, fim = min(datas), max(datas)
     return f"Audiências_{ini.year}_-_{ini:%d_%m_%Y}_a_{fim:%d_%m_%Y}.xlsx"
 
 
-def gerar_excel(grupos: list, saida: Path):
+def gerar_excel(linhas: list, saida):
+    """Grava a planilha. 'saida' pode ser um caminho ou um arquivo aberto (BytesIO)."""
     from openpyxl import Workbook
     from openpyxl.comments import Comment
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -600,7 +667,7 @@ def gerar_excel(grupos: list, saida: Path):
 
     wb = Workbook()
     ws = wb.active
-    anos = Counter(g["data"].year for g in grupos if g["data"])
+    anos = Counter(d.year for d in (_data(l.get("data")) for l in linhas) if d)
     ws.title = str(anos.most_common(1)[0][0]) if anos else "Audiências"
     ws.sheet_view.zoomScale = 85
 
@@ -616,21 +683,14 @@ def gerar_excel(grupos: list, saida: Path):
         ws.column_dimensions[ws.cell(1, c).column_letter].width = larg
 
     centro = Alignment(horizontal="center", vertical="center")
-    for r, g in enumerate(grupos, 2):
-        hora = None
-        if g["hora"]:
-            hh, mm = map(int, g["hora"].split(":"))
-            from datetime import time
-            hora = time(hh, mm)
+    for r, l in enumerate(linhas, 2):
         valores = [
-            STATUS_PADRAO or None, g["data"], hora,
-            "\n".join(dict.fromkeys(nome_hospital(p) for p in g["polos"])) or None,
-            nome_proprio(g["reclamante"]) if g["reclamante"] else None,
-            g["processo"] or None, g["vara"] or None, g["tipo"] or None, g["formato"] or None,
-            g["testemunhas"] or None, None, g["link_local"] or None,
+            l.get("status"), _data(l.get("data")), _hora(l.get("hora")), l.get("hospital"),
+            l.get("reclamante"), l.get("processo"), l.get("vara"), l.get("modalidade"),
+            l.get("audiencias"), l.get("testemunhas"), l.get("observacao"), l.get("link"),
         ]
         for c, v in enumerate(valores, 1):
-            cel = ws.cell(r, c, v)
+            cel = ws.cell(r, c, v if v not in ("", None) else None)
             cel.border = borda
             cel.font = Font(name="Calibri", size=11, bold=(c == 1), color=Color(theme=1))
             if c == 4:
@@ -643,11 +703,12 @@ def gerar_excel(grupos: list, saida: Path):
                 cel.alignment = centro
         ws.cell(r, 2).number_format = "mm-dd-yy"
         ws.cell(r, 3).number_format = FORMATO_HORA
-        if g["alertas"]:  # marca o nº do processo e explica no comentário
+        alertas = l.get("alertas") or []
+        if alertas:  # marca o nº do processo e explica no comentário
             ws.cell(r, 6).fill = amarelo
-            ws.cell(r, 6).comment = Comment("Conferir:\n- " + "\n- ".join(g["alertas"]), "Leitor")
+            ws.cell(r, 6).comment = Comment("Conferir:\n- " + "\n- ".join(alertas), "Leitor")
     ws.freeze_panes = "A2"
-    ws.auto_filter.ref = f"A1:L{max(len(grupos) + 1, 2)}"
+    ws.auto_filter.ref = f"A1:L{max(len(linhas) + 1, 2)}"
 
     # aba de apoio: tudo que não cabe no modelo
     ws2 = wb.create_sheet("Conferir")
@@ -656,12 +717,14 @@ def gerar_excel(grupos: list, saida: Path):
     ws2.append(cab2)
     for c in ws2[1]:
         c.font = Font(bold=True)
-    for g in grupos:
-        ws2.append([g["processo"], g["reclamante"], "\n".join(g["polos"]), g["outros"],
-                    "\n".join(g["alertas"]), "; ".join(g["origem"])])
+    for l in linhas:
+        alertas = l.get("alertas") or []
+        ws2.append([l.get("processo"), l.get("reclamante_original") or l.get("reclamante"),
+                    "\n".join(l.get("destinatarios") or []), l.get("outros"),
+                    "\n".join(alertas), "; ".join(l.get("origem") or [])])
         for c in (3, 5, 6):
             ws2.cell(ws2.max_row, c).alignment = Alignment(wrap_text=True, vertical="top")
-        if g["alertas"]:
+        if alertas:
             for c in range(1, len(cab2) + 1):
                 ws2.cell(ws2.max_row, c).fill = amarelo
     for col, larg in zip("ABCDEF", [28, 34, 60, 14, 55, 30]):
@@ -722,11 +785,11 @@ def main():
         if orfas:
             print(f"   AVISO: páginas {orfas} não reconhecidas (antes de qualquer notificação)")
 
-    grupos = agrupar(todas)
-    saida = Path(args.saida) if args.saida else Path(nome_arquivo_padrao(grupos))
-    gerar_excel(grupos, saida)
-    revisar = sum(1 for g in grupos if g["alertas"])
-    print(f"\nPronto: {len(todas)} notificações -> {len(grupos)} processo(s) em {saida} ({revisar} com alerta).")
+    linhas = montar_linhas(agrupar(todas))
+    saida = Path(args.saida) if args.saida else Path(nome_arquivo_padrao(linhas))
+    gerar_excel(linhas, saida)
+    revisar = sum(1 for l in linhas if l["alertas"])
+    print(f"\nPronto: {len(todas)} notificações -> {len(linhas)} processo(s) em {saida} ({revisar} com alerta).")
 
 
 if __name__ == "__main__":

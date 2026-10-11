@@ -1,3 +1,10 @@
 node_modules/
 *.tgz
 .DS_Store
+__pycache__/
+*.pyc
+# PDFs enviados pela página web e saídas locais
+dados/
+texto_lido/
+Audiências*.xlsx
+testes/pdfs/

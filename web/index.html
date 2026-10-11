@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leitor de Audiências</title>
+  <link rel="stylesheet" href="/web/app.css">
+  <script type="module" src="/web/app.js"></script>
+</head>
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+    <symbol id="i-excel" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 12l4 5m0-5-4 5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 2.5 20h19z"/><path d="M12 10v4m0 3v.01"/></symbol>
+    <symbol id="i-ok" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  </svg>
+
+  <header class="topo">
+    <div class="titulo">
+      <h1>Leitor de Audiências</h1>
+      <span>Notificações trabalhistas → planilha</span>
+    </div>
+    <div class="acoes-topo">
+      <button class="btn secundario" id="btnNova" hidden><svg><use href="#i-upload"/></svg><span>Nova leitura</span></button>
+      <button class="btn primario" id="btnExcel" hidden><svg><use href="#i-excel"/></svg><span>Baixar Excel</span></button>
+    </div>
+  </header>
+
+  <main id="conteudo">
+    <!-- 1. Envio -->
+    <section class="etapa" id="etapaEnvio">
+      <label class="soltar" id="areaSoltar">
+        <input type="file" id="inputArquivos" accept="application/pdf,.pdf" multiple hidden>
+        <svg><use href="#i-upload"/></svg>
+        <strong>Arraste os PDFs das notificações para cá</strong>
+        <span>ou clique para escolher. Pode enviar vários arquivos de uma vez.</span>
+      </label>
+      <ul class="lista-arquivos" id="listaArquivos"></ul>
+      <div class="linha-acoes" id="acoesEnvio" hidden>
+        <button class="btn secundario" id="btnLimparArquivos">Limpar</button>
+        <button class="btn primario" id="btnLer">Ler notificações</button>
+      </div>
+      <p class="erro" id="erroEnvio" role="alert" hidden></p>
+      <p class="dica" id="dicaServidor"></p>
+    </section>
+
+    <!-- 2. Processando -->
+    <section class="etapa" id="etapaProcessando" hidden>
+      <div class="cartao-progresso">
+        <div class="spinner" aria-hidden="true"></div>
+        <h2 id="tituloProgresso">Lendo as notificações…</h2>
+        <p id="textoProgresso" aria-live="polite"></p>
+        <div class="barra"><div id="barraProgresso"></div></div>
+        <p class="dica">O OCR leva alguns segundos por página. Você pode deixar esta página aberta e voltar depois.</p>
+      </div>
+    </section>
+
+    <!-- 3. Resultado -->
+    <section class="etapa" id="etapaResultado" hidden>
+      <div class="resumo">
+        <div class="numeros" id="resumoNumeros"></div>
+        <div class="filtros">
+          <input type="search" id="filtroTexto" placeholder="Filtrar por nome, processo, hospital…" aria-label="Filtrar linhas">
+          <label class="chave"><input type="checkbox" id="filtroAlertas"> Só pendentes</label>
+        </div>
+      </div>
+      <details class="avisos" id="avisos" hidden>
+        <summary></summary>
+        <ul></ul>
+      </details>
+
+      <div class="tabela-wrap">
+        <table class="tabela" id="tabela">
+          <thead>
+            <tr>
+              <th class="col-ctl" aria-label="Conferência"></th>
+              <th>STATUS</th>
+              <th>DATA</th>
+              <th>HORA</th>
+              <th>HOSPITAL</th>
+              <th>RECLAMANTE</th>
+              <th>PROCESSO</th>
+              <th>VARA</th>
+              <th>MODALIDADE</th>
+              <th>AUDIÊNCIAS</th>
+              <th>TESTEMUNHAS</th>
+              <th>OBSERVAÇÃO</th>
+              <th>LINK E SENHA</th>
+              <th class="col-ctl" aria-label="Remover"></th>
+            </tr>
+          </thead>
+          <tbody id="corpoTabela"></tbody>
+        </table>
+      </div>
+      <div class="linha-acoes esquerda">
+        <button class="btn secundario" id="btnAdicionar"><svg><use href="#i-plus"/></svg><span>Adicionar linha</span></button>
+        <button class="btn secundario" id="btnDesfazer" hidden>Desfazer todas as edições</button>
+      </div>
+    </section>
+
+    <section class="etapa" id="etapaErro" hidden>
+      <div class="cartao-progresso">
+        <h2>Não foi possível concluir a leitura</h2>
+        <p class="erro" id="textoErro"></p>
+        <button class="btn primario" id="btnTentarNovamente">Enviar outros arquivos</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Painel com o PDF original -->
+  <aside class="painel-pdf" id="painelPdf" hidden aria-label="Documento original">
+    <div class="painel-topo">
+      <div class="abas-pdf" id="abasPdf"></div>
+      <a class="btn icone" id="linkTexto" target="_blank" rel="noopener" title="Ver o texto lido pelo OCR">OCR</a>
+      <button class="btn icone" id="btnFecharPdf" title="Fechar" aria-label="Fechar documento"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <iframe id="framePdf" title="Documento original" allow="fullscreen"></iframe>
+  </aside>
+
+  <datalist id="opcoesStatus"><option>Agendada</option><option>Realizada</option><option>Redesignada</option><option>Cancelada</option><option>Adiada</option></datalist>
+  <datalist id="opcoesModalidade"><option>Una</option><option>Inicial</option><option>Instrução</option><option>Conciliação</option></datalist>
+  <datalist id="opcoesAudiencias"><option>Presencial</option><option>Telepresencial</option><option>Híbrida</option></datalist>
+  <datalist id="opcoesTestemunhas"><option>Sim</option><option>Não</option></datalist>
+
+  <div class="aviso-flutuante" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

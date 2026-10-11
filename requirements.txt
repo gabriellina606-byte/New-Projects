@@ -1,0 +1,9 @@
+# Leitura dos PDFs e OCR (o Tesseract em si é instalado à parte, com o idioma português)
+pymupdf>=1.23
+pytesseract>=0.3.10
+pillow>=10
+openpyxl>=3.1
+rapidfuzz>=3          # opcional: avisa nomes de reclamantes muito parecidos
+# Versão web
+flask>=3.0
+waitress>=3.0         # servidor de produção (funciona no Windows)
